@@ -1,33 +1,15 @@
-param (
-    [Parameter(Mandatory=$true)]
-    [string]$MacAddress
-)
+param ([Parameter(Mandatory=$true)][string]$MacAddress)
 
-function Send-WOL {
-    param (
-        [string]$MacAddress,
-        [string]$BroadcastAddress = "255.255.255.255",
-        [int]$Port = 9
-    )
+$mac = ($MacAddress -replace '[:-]').ToUpper()
+if ($mac.Length -ne 12) { throw "Invalid MAC address" }
 
-    $mac = $MacAddress -replace "[:-]"
-    if ($mac.Length -ne 12) {
-        Write-Error "Invalid MAC address format"
-        return
-    }
-
-    $macByteArray = [byte[]]::new(102)
-    $macBytes = 0..5 | ForEach-Object { [byte]::Parse($mac.Substring($_ * 2, 2), [System.Globalization.NumberStyles]::HexNumber) }
-    
-    for ($i = 0; $i -lt 6; $i++) { $macByteArray[$i] = 0xFF }
-    for ($i = 6; $i -lt 102; $i += 6) { $macBytes.CopyTo($macByteArray, $i) }
-    
-    $udpClient = New-Object System.Net.Sockets.UdpClient
-    $udpClient.Connect($BroadcastAddress, $Port)
-    $null = $udpClient.Send($macByteArray, $macByteArray.Length)
-    $udpClient.Close()
+$magic = [byte[]](,0xFF * 6)
+$macBytes = 0..5 | ForEach-Object { 
+    [Convert]::ToByte($mac.Substring($_ * 2, 2), 16)
 }
 
-Send-WOL $MacAddress
-
-# .\wake_on_lan.ps1 -MacAddress "00-00-00-00-00-00"
+$packet = $magic + ($macBytes * 16)
+$udp = [System.Net.Sockets.UdpClient]::new()
+$udp.Connect("255.255.255.255", 9)
+$udp.Send($packet, $packet.Length)
+$udp.Close()
